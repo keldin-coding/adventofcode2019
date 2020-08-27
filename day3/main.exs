@@ -8,6 +8,13 @@ defmodule Solution do
     [first, second]
   end
 
+  # This and the map_path/3 functions should be broken apart. In particular,
+  # all the map_path/3 functions share the creating a new map section, just
+  # differing in iterating over the x or y axis and what the range is. Pattern
+  # matching could probably get that to a do_map_path/4 where the first and
+  # second elements are the x and y ranges, with guard clauses to check if one
+  # is an integer. So one to iterate over x and one to iterate over y depending
+  # on if one of the ranges given is actually just a number.
   def build_map(directions) do
     Enum.reduce(directions, {%{}, {0, 0, 0}}, fn d, acc ->
       {path, coords} = acc
