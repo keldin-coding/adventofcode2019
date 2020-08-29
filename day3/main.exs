@@ -8,13 +8,6 @@ defmodule Solution do
     [first, second]
   end
 
-  # This and the map_path/3 functions should be broken apart. In particular,
-  # all the map_path/3 functions share the creating a new map section, just
-  # differing in iterating over the x or y axis and what the range is. Pattern
-  # matching could probably get that to a do_map_path/4 where the first and
-  # second elements are the x and y ranges, with guard clauses to check if one
-  # is an integer. So one to iterate over x and one to iterate over y depending
-  # on if one of the ranges given is actually just a number.
   def build_map(directions) do
     Enum.reduce(directions, {%{}, {0, 0, 0}}, fn d, acc ->
       {path, coords} = acc
@@ -35,62 +28,61 @@ defmodule Solution do
 
   def map_path("R" <> movement, start, path) do
     {value, _} = Integer.parse(movement)
-
     {x, y, steps} = start
 
-    {new_map, _count} = Enum.reduce((x + 1)..(x + value), {path, steps}, fn iter, acc ->
-      {old_map, steps_so_far} = acc
-
-      new_map = Map.put(old_map, {iter, y}, {1, steps_so_far + 1})
-      {new_map, steps_so_far + 1}
-    end)
+    new_map = do_map_path((x + 1)..(x + value), y, steps, path)
 
     {:right, value, new_map}
   end
 
   def map_path("L" <> movement, start, path) do
     {value, _} = Integer.parse(movement)
-
     {x, y, steps} = start
 
-    {new_map, _count} = Enum.reduce((x-1)..(x-value), {path, steps}, fn iter, acc ->
-      {old_map, steps_so_far} = acc
+    new_map = do_map_path((x-1)..(x-value), y, steps, path)
 
-      new_map = Map.put(old_map, {iter, y}, {1, steps_so_far + 1})
-      {new_map, steps_so_far + 1}
-    end)
 
     {:left, value, new_map}
   end
 
   def map_path("U" <> movement, start, path) do
     {value, _} = Integer.parse(movement)
-
     {x, y, steps} = start
 
-    {new_map, _count} = Enum.reduce((y + 1)..(y + value), {path, steps}, fn iter, acc ->
-      {old_map, steps_so_far} = acc
-
-      new_map = Map.put(old_map, {x, iter}, {1, steps_so_far + 1})
-      {new_map, steps_so_far + 1}
-    end)
+    new_map = do_map_path(x, (y + 1)..(y + value), steps, path)
 
     {:up, value, new_map}
   end
 
   def map_path("D" <> movement, start, path) do
     {value, _} = Integer.parse(movement)
-
     {x, y, steps} = start
 
-    {new_map, _count} = Enum.reduce((y - 1)..(y - value), {path, steps}, fn iter, acc ->
+    new_map = do_map_path(x, (y - 1)..(y - value), steps, path)
+
+    {:down, value, new_map}
+  end
+
+  defp do_map_path(x_range, y, step_start, path) when is_number(y) do
+    {new_map, _count} = Enum.reduce(x_range, {path, step_start}, fn iter, acc ->
+      {old_map, steps_so_far} = acc
+
+      new_map = Map.put(old_map, {iter, y}, {1, steps_so_far + 1})
+      {new_map, steps_so_far + 1}
+    end)
+
+    new_map
+  end
+
+  defp do_map_path(x, y_range, step_start, path) when is_number(x) do
+    {new_map, _count} = Enum.reduce(y_range, {path, step_start}, fn iter, acc ->
       {old_map, steps_so_far} = acc
 
       new_map = Map.put(old_map, {x, iter}, {1, steps_so_far + 1})
       {new_map, steps_so_far + 1}
     end)
 
-    {:down, value, new_map}
+    new_map
   end
 end
 
@@ -112,8 +104,6 @@ merged = Map.merge(first_wire, second_wire, fn _, value1, value2 ->
   {2, count1 + count2}
 end)
 
-IO.inspect(merged)
-
 crosses = Map.to_list(merged) |> Enum.filter(
   fn {k, v} ->
     {touches, _steps} = v
@@ -121,7 +111,7 @@ crosses = Map.to_list(merged) |> Enum.filter(
   end
 )
 
-# IO.inspect(crosses)
+IO.inspect(crosses)
 
 dist = Enum.min_by(crosses, fn {_coord, values} ->
   {_, steps} = values
@@ -129,8 +119,3 @@ dist = Enum.min_by(crosses, fn {_coord, values} ->
 end)
 
 IO.inspect(dist)
-
-# distance = fn {x, y} -> abs(0 - x) + abs(0 - y) end
-# dist = Enum.min_by(crosses, distance)
-
-# IO.inspect(distance.(dist))
