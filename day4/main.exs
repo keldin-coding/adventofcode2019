@@ -59,11 +59,7 @@ end
 
 val =
   Solution.input()
-  |> Enum.count(fn x ->
-    f = Solution.valid_password_parttwo?(x)
-    # IO.puts("Num: #{x} - #{f}")
-    f
-  end)
+  |> Enum.count(&Solution.valid_password_parttwo?(&1))
 
 IO.puts("Valid passwords: #{val}")
 
