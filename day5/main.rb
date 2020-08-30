@@ -1,89 +1,139 @@
 # frozen_string_literal: true
 
-# A good source of cleanup would be to subclass this for each type of operation
-# turning this into a factory. Initialize becomes a factory method with a bunch
-# of subclasses of instruction with specialized run methods (no more case) and
-# specialized advanced functions
 class Instruction
-  attr_reader :op, :args, :params, :destination, :instruction_set, :destination_builder
+  def self.arg_count; 2; end
+  def self.uses_destination?; true; end
 
-  Param = Struct.new(:slot, :mode)
+  attr_reader :args, :destination
 
-  OPERATIONS = {
-    "01" => [:+, [1, 2]],
-    "02" => [:*, [1, 2]],
-    "03" => [:input, []],
-    "04" => [:output, [1]],
-    "05" => [:jump_true, [1, 2]],
-    "06" => [:jump_false, [1, 2]],
-    "07" => [:<, [1, 2]],
-    "08" => [:==, [1, 2]],
-    "99" => [:halt, []],
-  }
-
-  def initialize(instruction_set)
-    @instruction_set = instruction_set
-
-    # Operator is defined by the last two characters
-    @op, arg_slots = OPERATIONS.fetch(instruction_set[-2..])
-
-    @params = arg_slots.map.with_index do |slot_position, i|
-      Param.new(slot_position, instruction_set[2 - i].to_i)
-    end
-
-    @destination_builder = Param.new(arg_slots.length + 1, 1)
-
-    @args = []
-  end
-
-  def load_arguments(program)
-    @args = params.map do |param|
-      program.fetch_arg(param.slot, param.mode)
-    end
-
-    @destination = program.fetch_arg(destination_builder.slot, destination_builder.mode)
-  end
-
-  def run(program)
-    program.halt! if op == :halt
-
-    load_arguments(program)
-
-    case op
-    when :+, :* then program.update(destination, args.reduce(op))
-    when :input then program.update(destination, program.outputs.last)
-    when :jump_true
-      if args.first != 0
-        program.jump(args[1])
-        return 0
-      end
-    when :jump_false
-      if args.first == 0
-        program.jump(args[1])
-        return 0
-      end
-    when :<, :==
-      if args.first.send(op, args[1])
-        program.update(destination, 1)
-      else
-        program.update(destination, 0)
-      end
-    when :output
-      program.outputs << args.first
-      puts args.first
-    end
-
-    advance
+  def initialize(args, destination)
+    @args = args
+    @destination = destination
   end
 
   def advance
-    1 + # operation always requires moving forward
-      args.length + # always need to move forward by however many arguments
-      (has_destination? ? 1 : 0) # Commands with no destination specified
+    1 + # instruction always counts
+      self.class.arg_count +
+      (self.class.uses_destination? ? 1 : 0)
   end
+end
 
-  def has_destination?
-    ![:output, :jump_true, :jump_false].include?(op)
+class AddInstruction < Instruction
+  def run(program)
+    program.update(destination, args.reduce(:+))
+    advance
+  end
+end
+
+class MultiplyInstruction < Instruction
+  def run(program)
+    program.update(destination, args.reduce(:*))
+    advance
+  end
+end
+
+class HaltInstruction < Instruction
+  def self.arg_count; 0; end
+  def self.uses_destination?; false; end
+
+  def run(program)
+    program.halt!
+  end
+end
+
+class InputInstruction < Instruction
+  def self.arg_count; 0; end
+
+  def run(program)
+    program.update(destination, program.outputs.last)
+    advance
+  end
+end
+
+class OutputInstruction < Instruction
+  def self.arg_count; 1; end
+  def self.uses_destination?; false; end
+
+  def run(program)
+    program.outputs << args.first
+    puts args.first
+    advance
+  end
+end
+
+class JumpTrueInstruction < Instruction
+  def self.uses_destination?; false; end
+
+  def run(program)
+    if args[0] != 0
+      program.jump(args[1])
+      return 0
+    else
+      advance
+    end
+  end
+end
+
+class JumpFalseInstruction < Instruction
+  def self.uses_destination?; false; end
+
+  def run(program)
+    if args[0] == 0
+      program.jump(args[1])
+      return 0
+    else
+      advance
+    end
+  end
+end
+
+class LessThanInstruction < Instruction
+  def run(program)
+    val = args[0] < args[1] ? 1 : 0
+
+    program.update(destination, val)
+    advance
+  end
+end
+
+class EqualsInstruction < Instruction
+  def run(program)
+    val = args[0] == args[1] ? 1 : 0
+
+    program.update(destination, val)
+    advance
+  end
+end
+
+class InstructionFactory
+  OPERATIONS = {
+    "01" => AddInstruction, # [:+, [1, 2]],
+    "02" => MultiplyInstruction, # [:*, [1, 2]],
+    "03" => InputInstruction, # [:input, []],
+    "04" => OutputInstruction, # [:output, [1]],
+    "05" => JumpTrueInstruction, # [:jump_true, [1, 2]],
+    "06" => JumpFalseInstruction, # [:jump_false, [1, 2]],
+    "07" => LessThanInstruction, # [:<, [1, 2]],
+    "08" => EqualsInstruction, # [:==, [1, 2]],
+    "99" => HaltInstruction, # [:halt, []],
+  }
+
+  def self.build(instruction_set, program)
+    klass = OPERATIONS.fetch(instruction_set[-2..])
+    destination = nil
+
+    args = (0...klass.arg_count).map do |slot|
+      mode = instruction_set[2 - slot].to_i
+
+      program.fetch_arg(slot + 1, mode)
+    end
+
+    if klass.uses_destination?
+      # The mode for destinations is always 1
+      destination = program.fetch_arg(klass.arg_count + 1, 1)
+    end
+
+    klass.new(args, destination)
   end
 end
 
@@ -95,13 +145,6 @@ class Program
     @raw_instructions = raw_instructions
     @outputs = [5]
     @position = 0
-  end
-
-  def fetch_arg(slot, mode)
-    case mode
-    when 1 then raw_instructions[position + slot]
-    when 0 then raw_instructions[raw_instructions[position + slot]]
-    end
   end
 
   def run
@@ -118,7 +161,14 @@ class Program
   end
 
   def process(instruction_set)
-    Instruction.new(instruction_set.to_s.rjust(5, "0"))
+    InstructionFactory.build(instruction_set.to_s.rjust(5, "0"), self)
+  end
+
+  def fetch_arg(slot, mode)
+    case mode
+    when 1 then raw_instructions[position + slot]
+    when 0 then raw_instructions[raw_instructions[position + slot]]
+    end
   end
 
   def update(destination, value)
